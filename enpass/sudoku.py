@@ -28,7 +28,7 @@ from os import devnull
 from typing import Any, Callable, Generator, Iterator, NamedTuple, SupportsIndex
 
 # To avoid circularity you should use it as constraints.Constraint. (Although we're supposed to be avoiding circularity there too.)
-import variant_sudoku.constraints as constraints
+import enpass.constraints as constraints
 
 range_from_0 = range
 

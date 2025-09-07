@@ -1,6 +1,6 @@
 # import pytest
 
-from variant_sudoku.sudoku import (
+from enpass.sudoku import (
     Cell,
     CellPosition,
     NumberPuzzle,

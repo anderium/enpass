@@ -1,7 +1,7 @@
 import pytest
 
-from variant_sudoku.constraints import LocalMaximum, LocalMinimum, RegionSumLine
-from variant_sudoku.sudoku import CellPosition, Sudoku
+from enpass.constraints import LocalMaximum, LocalMinimum, RegionSumLine
+from enpass.sudoku import CellPosition, Sudoku
 
 
 @pytest.mark.xfail(raises=NotImplementedError)

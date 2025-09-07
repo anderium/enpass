@@ -5,7 +5,7 @@ from collections import Counter
 from math import prod
 from typing import Any, Callable, ClassVar, Generator, Iterable, Literal, Self, overload, override
 
-import variant_sudoku.sudoku as sudoku
+import enpass.sudoku as sudoku
 
 type CellPosition = "sudoku.CellPosition"
 type AnyPosition = CellPosition | tuple[int, int]

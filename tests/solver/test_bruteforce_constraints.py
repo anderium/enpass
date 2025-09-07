@@ -2,7 +2,7 @@ from typing import Callable
 
 import pytest
 
-from variant_sudoku.constraints import (
+from enpass.constraints import (
     LTGT,
     Arrow,
     CalculatorCage,
@@ -30,7 +30,7 @@ from variant_sudoku.constraints import (
     TugOfWarLine,
     ZipperLine,
 )
-from variant_sudoku.sudoku import Cell, CellPosition, Sudoku
+from enpass.sudoku import Cell, CellPosition, Sudoku
 
 
 def blank_windoku(given_digits: dict[CellPosition, int] = {}):  # noqa: B006

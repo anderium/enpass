@@ -7,8 +7,8 @@ from typing import Any, Callable, Generator
 # Fix for running examples by running python3 examples/<file>.py
 sys.path.append(os.getcwd())  # noqa: PTH109
 
-from variant_sudoku.constraints import AnyPosition, Constraint, to_CellPositions
-from variant_sudoku.sudoku import Cell, Sudoku
+from enpass.constraints import AnyPosition, Constraint, to_CellPositions
+from enpass.sudoku import Cell, Sudoku
 
 
 def blank_windoku():

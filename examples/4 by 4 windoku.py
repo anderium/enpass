@@ -4,8 +4,8 @@ import sys
 # Fix for running examples by running python3 examples/<file>.py
 sys.path.append(os.getcwd())  # noqa: PTH109
 
-from variant_sudoku.constraints import LTGT
-from variant_sudoku.sudoku import CellPosition, Sudoku
+from enpass.constraints import LTGT
+from enpass.sudoku import CellPosition, Sudoku
 
 
 def blank_windoku():
