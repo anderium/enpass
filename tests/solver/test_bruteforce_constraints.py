@@ -1,5 +1,7 @@
 from typing import Callable
 
+import pytest
+
 from variant_sudoku.constraints import (
     LTGT,
     Arrow,
@@ -142,6 +144,7 @@ def test_Kropki_windoku_and_two_and_three():
         assert cell.digit == expected_digit
 
 
+@pytest.mark.xfail(raises=NotImplementedError)
 def test_LocalExtrema_windoku_mount_and_valley():
     sudoku = blank_windoku()
     get_cell: Callable[[int, int], Cell] = lambda x, y: sudoku.position_to_cell[CellPosition(x, y)]  # noqa: E731
@@ -337,7 +340,7 @@ def test_PillArrow_windoku_Phistomefels_ring():
     sudoku.bruteforce_solve()
     print(sudoku.visualise_digits_as_string())
     assert not sudoku.is_unsolved()
-    solution_string = ".... 1324 2143 ...."
+    solution_string = "4231132421433412"
     solution_values = [*map(int, solution_string)]
     # assert all(cell.digit == expected_digit for cell, expected_digit in zip(sudoku.cells, solution_values))
     for get_cell, expected_digit in zip(sudoku.cells, solution_values):

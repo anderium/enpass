@@ -25,9 +25,9 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from operator import index
 from os import devnull
-from typing import Any, Callable, Iterator, NamedTuple, SupportsIndex
+from typing import Any, Callable, Generator, Iterator, NamedTuple, SupportsIndex
 
-# TODO: Apparently to avoid circularity I should try to use it as constraints.Constraint instead. (Although I'm avoiding circularity there too.)
+# To avoid circularity you should use it as constraints.Constraint. (Although we're supposed to be avoiding circularity there too.)
 import variant_sudoku.constraints as constraints
 
 range_from_0 = range
@@ -44,6 +44,14 @@ def range():
 
 
 @contextmanager
+def suppress_stdout():
+    """A context manager that redirects stdout to devnull."""
+    # Copied from SO cause I'm lazy: https://stackoverflow.com/a/52442331
+    with open(devnull, "w") as fnull, redirect_stdout(fnull) as out:
+        yield out
+
+
+@contextmanager
 def suppress_stdout_stderr():
     """A context manager that redirects stdout and stderr to devnull."""
     # Copied from SO cause I'm lazy: https://stackoverflow.com/a/52442331
@@ -56,6 +64,7 @@ class CellPosition(NamedTuple):
     y: int
 
 
+# TODO: Doubler Cells constraint. Perhaps this can be done by adding a list of applied modifiers and candidate modifiers to cells?
 @dataclass
 class Cell:
     x: int = field(init=False)
@@ -76,7 +85,6 @@ class Cell:
 
     @property
     def known(self) -> bool:
-        # return len(self.candidates) == 1
         return self._known_and_processed
 
     @property
@@ -108,11 +116,11 @@ class Cell:
         return max(self.candidates)
 
     def save_to_stack(self) -> None:
-        # TODO: If they are not ints (immutable, actually) anymore, don't shallow copy.
+        # TODO: If candidates are not ints (read: immutable) anymore, don't shallow copy.
         self._bruteforce_stack.append((self._known_and_processed, self.candidates.copy()))
 
     def restore_from_stack(self):
-        # Not setting candidates, since the set might be referenced somewhere…
+        # Do not set to self.candidates, since the set might be referenced somewhere…
         known, candidates = self._bruteforce_stack.pop()
         self._known_and_processed = known
         self.candidates.update(candidates)
@@ -121,6 +129,7 @@ class Cell:
         self._known_and_processed = True
         self.candidates.intersection_update({digit})
 
+    # TODO: Forcing this might be enough to adapt to doubler cells. Perhaps make candidates private as self._candidates
     def _discard_with_op[T](self, operator: Callable[[int, T], bool], value: T) -> bool:
         candidates_to_remove = set[int]()
         for candidate in self.candidates:
@@ -147,6 +156,9 @@ class Cell:
     def discard_other_values(self, values: set[int]) -> bool:
         return self._discard_with_op((lambda candidate, values: candidate not in values), values)
 
+    # TODO: Should cells know about the sudoku, or how can I reasonably do this?
+    # TODO: Should this be a property of the cells, or of the entire sudoku?
+    #       And if it's the latter, how do I handle this with the constraints that use these properties?
     @property
     def orthogonally_adjacent_neighbours(self) -> list["Cell"]:
         raise NotImplementedError
@@ -167,6 +179,7 @@ class Region:
         self.cells: list[Cell] = cells
         self.cell_positions: set[CellPosition] = {cell.position for cell in cells}
         # TODO: Should regions even care about these links? Or just the puzzle?
+        # TODO: This is something that I added for logical solves, but implementing that is probably far away
         self.strong_links: list[Any] = []  # TODO: Typing
         self.weak_links: list[Any] = []  # TODO: Typing
 
@@ -180,7 +193,7 @@ class Region:
         return iter(self.cells)
 
     @property
-    def unknown_cells(self):
+    def unknown_cells(self) -> Generator[Cell, None, None]:
         return (cell for cell in self.cells if not cell.known)
 
 
@@ -395,14 +408,14 @@ class NumberPuzzle:
                 changed_positions = self.set_cell(next_unknown_cell, attempted_digit)
             if self.is_impossible(changed_positions):
                 if len(self._bruteforce_stack) == 0:
-                    print("Bruteforce says no!")
+                    print("Bruteforce says no solutions!")
                     break
                 attempted_cell, attempted_digit = self.restore_from_stack()
                 # Remove and not discard, because it MUST be there or something has gone wrong
                 attempted_cell.candidates.remove(attempted_digit)
 
     def is_unique(self) -> bool:
-        with suppress_stdout_stderr():
+        with suppress_stdout():
             self.bruteforce_solve()
             # Solved without guessing must be the only possible solution, if it's even valid
             if len(self._bruteforce_stack) == 0:

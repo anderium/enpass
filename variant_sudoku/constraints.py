@@ -3,12 +3,68 @@ import operator
 from abc import ABCMeta, abstractmethod
 from collections import Counter
 from math import prod
-from typing import Any, ClassVar, Generator, Iterable, Literal, Self, overload, override
+from typing import Any, Callable, ClassVar, Generator, Iterable, Literal, Self, overload, override
 
 import variant_sudoku.sudoku as sudoku
 
 type CellPosition = "sudoku.CellPosition"
 type AnyPosition = CellPosition | tuple[int, int]
+
+
+def has_sum(target_sum: int, cells: list["sudoku.Cell"]) -> bool:
+    """Can the target sum fall within the minimum and maximum sum that
+    the cells can create?
+
+    Naively returns whether it thinks that sum is possible with the
+    cells, it doesn't consider cells that see each other or gaps in the
+    range due to missing combinations.
+
+    Parameters
+    ----------
+    target_sum : int
+        The target sum.
+    cells : list[sudoku.Cell]
+        The cells with which the minimum and maximum sum is calculated.
+
+    Returns
+    -------
+    bool
+        Whether the target sum falls within the range of minimum and
+        maximum sums.
+    """
+    minimum_sum = sum(cell.minimum for cell in cells)
+    maximum_sum = sum(cell.maximum for cell in cells)
+    return minimum_sum <= target_sum <= maximum_sum
+
+
+def overlapping_sums(cells1: list["sudoku.Cell"], cells2: list["sudoku.Cell"], /) -> bool:
+    """Do the ranges created by the minimum and maximum sum of the cells overlap?
+
+    Naively returns whether it thinks that sum is possible with the
+    cells, it doesn't consider cells that see each other or gaps in the
+    range due to missing combinations.
+
+    Parameters
+    ----------
+    cells1 : list[sudoku.Cell]
+        The first set of cells with which the range is calculated from the
+        cell minima and maxima.
+    cells2 : list[sudoku.Cell]
+        The second set of cells with which the range is calculated from the
+        cell minima and maxima.
+
+    Returns
+    -------
+    bool
+        Whether the ranges of minimum and maximum sums overlap.
+    """
+    first_minimum = sum(cell.minimum for cell in cells1)
+    first_maximum = sum(cell.maximum for cell in cells1)
+    second_minimum = sum(cell.minimum for cell in cells2)
+    second_maximum = sum(cell.maximum for cell in cells2)
+    # True:  [()] . ([]) . ([)] . [(])
+    # False: []() . ()[]
+    return first_minimum <= second_minimum <= first_maximum or second_minimum <= first_minimum <= second_maximum
 
 
 # Overloads so typing hints are nicer
@@ -61,6 +117,15 @@ class Constraint(metaclass=ABCMeta):
         -------
         list[sudoku.Cell]
             Returns all cells which had their candidates updated.
+
+        Implementation guidelines
+        -------------------------
+        TODO: Determine how to handle logic at all.
+              Perhaps this should only be naive candidate removal?
+              It definitely cannot handle multiple of the same constraint in a
+              retion yet, as that is a more global constraint.
+        TODO: How to handle doubler cells nicely if we're doing it by removing
+              candidates? Should cells have a way to remove values instead?
         """
         # TODO: On the other hand, letting the solver code handle checking if cells have been updated might be fine?
         ...
@@ -82,6 +147,13 @@ class Constraint(metaclass=ABCMeta):
         -------
         bool
             Do the values of the cell provide a way to satisfy the constraint?
+
+        Implementation guidelines
+        -------------------------
+        Do not include complicated logic with the candidates. It should be a
+        fast check that returns `False` conservatively. Use `Cell.minimum` and
+        `Cell.maximum` if they are useful, but otherwise do not make conclusions
+        when `Cell.value is None`.
         """
         ...
 
@@ -203,13 +275,7 @@ class DoubleArrow(Constraint):
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         head_cell_1, head_cell_2, *line = cells
-        head_minimum = head_cell_1.minimum + head_cell_2.minimum
-        head_maximum = head_cell_1.maximum + head_cell_2.maximum
-        line_minimum = sum(cell.minimum for cell in line)
-        line_maximum = sum(cell.maximum for cell in line)
-        # True:  [()] . ([]) . ([)] . [(])
-        # False: []() . ()[]
-        return head_minimum <= line_minimum <= head_maximum or line_minimum <= head_minimum <= line_maximum
+        return overlapping_sums([head_cell_1, head_cell_2], line)
 
 
 class Arrow(Constraint):
@@ -248,11 +314,7 @@ class Arrow(Constraint):
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         head, *line = cells
-        line_minimum = sum(cell.minimum for cell in line)
-        line_maximum = sum(cell.maximum for cell in line)
-        # True:  [()] . ([]) . ([)] . [(])
-        # False: []() . ()[]
-        return head.minimum <= line_minimum <= head.maximum or line_minimum <= head.minimum <= line_maximum
+        return overlapping_sums([head], line)
 
 
 class Thermometer(Constraint):
@@ -324,8 +386,7 @@ class RomanSum(Constraint):
         return changed
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
-        cell_one, cell_two = cells
-        return cell_one.minimum + cell_two.minimum <= self.sum <= cell_one.maximum + cell_two.maximum
+        return has_sum(self.sum, cells)
 
 
 class KropkiDifference(Constraint):
@@ -371,6 +432,12 @@ class KropkiDifference(Constraint):
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         cell_one, cell_two = cells
+        if cell_one.value is None:
+            return True
+        if cell_two.value is None:
+            return True
+        return abs(cell_one.value - cell_two.value) == 1
+        # Do not use something like this, because it won't support doubler cells!
         cell_two_options = set[int].union(
             *({candidate + self.difference, candidate - self.difference} for candidate in cell_one.candidates)
         )
@@ -395,7 +462,7 @@ class KropkiRatio(Constraint):
         self.ratio = ratio
 
     # TODO: Support things that make non-integer values possible e.g. 3/2*4 = 6
-    def double_and_half_if_whole(self, candidate: int):
+    def multiple_always_and_fraction_if_whole(self, candidate: int):
         options: set[int] = {candidate * self.ratio}
         if candidate / self.ratio == candidate // self.ratio:
             options.add(candidate // self.ratio)
@@ -408,10 +475,10 @@ class KropkiRatio(Constraint):
         cell_one, cell_two = cells
 
         cell_two_options = set[int].union(
-            *(self.double_and_half_if_whole(candidate) for candidate in cell_one.candidates)
+            *(self.multiple_always_and_fraction_if_whole(candidate) for candidate in cell_one.candidates)
         )
         cell_one_options = set[int].union(
-            *(self.double_and_half_if_whole(candidate) for candidate in cell_two.candidates)
+            *(self.multiple_always_and_fraction_if_whole(candidate) for candidate in cell_two.candidates)
         )
 
         cell_one_prev_size = len(cell_one.candidates)
@@ -428,8 +495,13 @@ class KropkiRatio(Constraint):
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         cell_one, cell_two = cells
+        if cell_one.value is None:
+            return True
+        if cell_two.value is None:
+            return True
+        return cell_two.value in self.multiple_always_and_fraction_if_whole(cell_one.value)
         cell_two_options = set[int].union(
-            *(self.double_and_half_if_whole(candidate) for candidate in cell_one.candidates)
+            *(self.multiple_always_and_fraction_if_whole(candidate) for candidate in cell_one.candidates)
         )
         possibilities = cell_two.candidates & cell_two_options
         return len(possibilities) > 0
@@ -449,7 +521,7 @@ class _LocalExtremum(Constraint):
             *({neighbour.position for neighbour in cell.orthogonally_adjacent_neighbours} for cell in cells)
         )
         super().__init__(affected_cells=[*cells_tuple, *neighbours], **kwargs)
-        self.cells = set(cells_tuple)
+        self.internal_positions = set(cells_tuple)
         self.neighbours = neighbours
 
     @staticmethod
@@ -463,10 +535,10 @@ class _LocalExtremum(Constraint):
         return changed
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
-        cells, _neighbours = cells[: len(self.cells)], cells[len(self.cells) :]
+        cells = cells[: len(self.internal_positions)]
         for cell in cells:
             for neighbour in cell.orthogonally_adjacent_neighbours:
-                if neighbour.position not in self.cells and self.comparison(neighbour, cell):
+                if neighbour.position not in self.internal_positions and self.comparison(neighbour, cell):
                     return False
         return True
 
@@ -477,7 +549,7 @@ class LocalMinimum(_LocalExtremum):
     @staticmethod
     @override
     def comparison(neighbour: "sudoku.Cell", cell: "sudoku.Cell") -> bool:
-        return neighbour.minimum < cell.maximum
+        return neighbour.maximum > cell.minimum
 
 
 class LocalMaximum(_LocalExtremum):
@@ -486,7 +558,7 @@ class LocalMaximum(_LocalExtremum):
     @staticmethod
     @override
     def comparison(neighbour: "sudoku.Cell", cell: "sudoku.Cell") -> bool:
-        return neighbour.maximum > cell.minimum
+        return neighbour.minimum < cell.maximum
 
 
 class KillerCage(Constraint):
@@ -512,6 +584,8 @@ class KillerCage(Constraint):
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         digits = set[int]()
+        # TODO: This is effectively an extra region of possibly smaller size constraint
+        # Unique digits, not unique values!
         for cell in cells:
             # Not using known because there may be doubler cells in the future
             if cell.digit is None:
@@ -519,7 +593,7 @@ class KillerCage(Constraint):
             if cell.digit in digits:
                 return False
             digits.add(cell.digit)
-        return sum(cell.minimum for cell in cells) <= self.sum <= sum(cell.maximum for cell in cells)
+        return has_sum(self.sum, cells)
 
 
 class LimitedValues(Constraint):
@@ -550,7 +624,10 @@ class LimitedValues(Constraint):
         return []
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
-        return len(cells[0].candidates & self.allowed_values) > 0
+        cell = cells[0]
+        return cell.value is None or cell.value in self.allowed_values
+        # TODO: This previous method was probably more efficient, but doesn't support values. Can we reintroduce something similar?
+        # return len(cells[0].candidates & self.allowed_values) > 0
 
 
 class _InfiniteLimitedValues(Constraint):
@@ -584,7 +661,10 @@ class _InfiniteLimitedValues(Constraint):
         return []
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
-        return any(self.allowed(candidate) for candidate in cells[0].candidates)
+        cell = cells[0]
+        return cell.value is None or self.allowed(cell.value)
+        # TODO: This previous method was probably more efficient, but doesn't support values. Can we reintroduce something similar?
+        # return any(self.allowed(candidate) for candidate in cells[0].candidates)
 
 
 class Even(_InfiniteLimitedValues):
@@ -620,6 +700,12 @@ class HighDigits_4by4(LimitedValues):
 
 
 class CountingCircles(Constraint):
+    # TODO: I don't think it makes sense to use the value with doubler cells, but is adding it to the docs enough for users?
+    """Digits in a circle count in how many circles that digit occurs.
+
+    This uses the actual digit, not the value of the cell.
+    """
+
     constraint_name = "Counting Circles"
 
     def __init__(self, *, positions: tuple[AnyPosition, ...], **kwargs: Any):
@@ -650,15 +736,18 @@ class RenbanLine(Constraint):
         return []
 
     # How can I make this more efficient?
-    # I guess it additionally qualifies as a partial region?
+    # I guess it additionally qualifies as a partial region? But not really since it's with values and not digits.
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         seen = set[int]()
+        # No value may occur twice.
         for cell in cells:
             if cell.value is None:
                 continue
             if cell.value in seen:
                 return False
             seen.add(cell.value)
+        # 0 seen -> all unknown, assume it's fine
+        # 1+ seen -> the difference between maximum and minimum must be bridgeable within the line length
         return len(seen) == 0 or max(seen) - min(seen) <= self.expected_difference
 
 
@@ -699,6 +788,12 @@ class ZipperLine(Constraint):
 
 
 class Quadruple(Constraint):
+    # TODO: I don't think it makes sense to use the value with doubler cells, but is adding it to the docs enough for users?
+    """Digits in a circle count in how many circles that digit occurs.
+
+    This uses the actual digit, not the value of the cell.
+    """
+
     constraint_name = "Quadruple Circle"
 
     def __init__(self, *, top_left: AnyPosition, digits: list[int], **kwargs: Any):
@@ -713,6 +808,7 @@ class Quadruple(Constraint):
     def update_cell_candidates(self, cells: list["sudoku.Cell"]) -> list["sudoku.Cell"]:
         return []
 
+    # This is applicable to digits, not values, so using candidates is fine.
     def check(self, cells: list["sudoku.Cell"]) -> bool:
         total_candidate_counter = Counter(itertools.chain(*(cell.candidates for cell in cells)))
         # return (self.target_counter - total_candidate_counter).most_common(1)[0][1] <= 0
@@ -770,6 +866,7 @@ class RegionSumLine(Constraint):
 
     @classmethod
     def from_positions(cls, *, positions: list[AnyPosition], regions: list["sudoku.Region"]) -> Self:
+        raise NotImplementedError("TODO: check that regions don't overlap, then use them to split positionss")
         segments = [positions]
         return cls(segments=segments)
 
@@ -782,6 +879,8 @@ class RegionSumLine(Constraint):
         return []
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
+        # This is a bit more efficient at rejecting bad states than using
+        # `compare_sums` for each pair of adjacent segments would be.
         sum_minimum = None
         sum_maximum = None
         for segment in self.cells_to_segments(cells):
@@ -838,6 +937,12 @@ class CalculatorCage(Constraint):
         super().__init__(affected_cells=[cell_one, cell_two], **kwargs)
         self.result = result
         self.known_ordered = known_ordered
+        # Operators must support floats to support halfer cells
+        operators: list[Callable[[float, float], float]] = [operator.add, operator.sub, operator.mul, operator.truediv]
+        self.operators = operators
+        if not self.known_ordered:
+            operators.append(lambda a, b: b - a)
+            operators.append(lambda a, b: b / a)
 
     def update_cell_candidates(self, cells: list["sudoku.Cell"]) -> list["sudoku.Cell"]:
         return []
@@ -849,11 +954,7 @@ class CalculatorCage(Constraint):
             return True
         if cell_two.value is None:
             return True
-        operators = [operator.add, operator.sub, operator.mul, operator.truediv]
-        if not self.known_ordered:
-            operators.append(lambda a, b: b - a)
-            operators.append(lambda a, b: b / a)
-        return any(op(cell_one.value, cell_two.value) == self.result for op in operators)
+        return any(op(cell_one.value, cell_two.value) == self.result for op in self.operators)
 
 
 # Every arrow is also a pill arrow, but the logic depends on the size of the pill, so i guess this will just be length 2.
@@ -906,6 +1007,17 @@ class EquidifferenceLine(Constraint):
         return []
 
     def check(self, cells: list["sudoku.Cell"]) -> bool:
+        observed_difference = None
+        for cell1, cell2 in itertools.pairwise(cells):
+            if cell1.value is None:
+                continue
+            if cell2.value is None:
+                continue
+            this_difference = abs(cell1.value - cell2.value)
+            if observed_difference is None:
+                observed_difference = this_difference
+            elif this_difference != observed_difference:
+                return False
         return True
 
 

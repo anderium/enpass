@@ -1,7 +1,10 @@
+import pytest
+
 from variant_sudoku.constraints import LocalMaximum, LocalMinimum, RegionSumLine
 from variant_sudoku.sudoku import CellPosition, Sudoku
 
 
+@pytest.mark.xfail(raises=NotImplementedError)
 def test_LocalExtemum_affected_cells():
     sudoku = Sudoku(puzzle_size=4, given_digits={})
     one_one = sudoku.cells[0]
@@ -20,7 +23,13 @@ def test_LocalExtemum_affected_cells():
     }
 
 
+@pytest.mark.xfail(raises=NotImplementedError)
 def test_RegionSumLine_from_positions():
     sudoku = Sudoku(puzzle_size=4, given_digits={})
-    constraint = RegionSumLine.from_positions(positions=[(1, 1), (2, 2), (3, 3), (4, 4)], regions=sudoku.regions)
+    regions = [region for region in sudoku.regions if region.label.startswith("Box ")]
+    # TODO: For jigsaw puzzles this should also work, but I have to be careful with the concave corner crossings.
+    # regions = [region for region in sudoku.regions if region.label.startswith("Jigsaw ")]
+    # TODO: What about when some cells aren't in the regions, e.g. because they're outside skyscraper clues or because
+    #       the regions are extra regions that don't fill the grid.
+    constraint = RegionSumLine.from_positions(positions=[(1, 1), (2, 2), (3, 3), (4, 4)], regions=regions)
     assert constraint.segment_positions == [[(1, 1), (2, 2)], [(3, 3), (4, 4)]]
