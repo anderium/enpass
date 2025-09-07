@@ -25,7 +25,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install ruff pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - uses: astral-sh/ruff-action@v3
+    - name: Lint with Ruff
+      uses: astral-sh/ruff-action@v3
     - name: Test with pytest
+      # Might have to change to src/enpass layout instead to better support making it distributable
+      # https://docs.pytest.org/en/stable/explanation/goodpractices.html#tests-outside-application-code
       run: |
-        pytest
+        python -m pytest
